@@ -37,6 +37,8 @@ abstract class CompletionIterator[ +A, +I <: Iterator[A]](sub: I) extends Iterat
     r
   }
 
+  def isCompleted(): Boolean = completed
+
   def completion(): Unit
 }
 

@@ -36,4 +36,9 @@ private[spark] object Utils {
     }
     ordering.leastOf(input.asJava, num).iterator.asScala
   }
+
+  def isIterable[T](value: T): Boolean = {
+    value.isInstanceOf[scala.collection.mutable.Iterable[_]] ||
+    value.isInstanceOf[scala.collection.immutable.Iterable[_]]
+  }
 }

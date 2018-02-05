@@ -30,7 +30,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.storage._
-import org.apache.spark.util.Utils
+import org.apache.spark.util.{CompletionIterator, Utils}
 import org.apache.spark.util.io.{ChunkedByteBuffer, ChunkedByteBufferOutputStream}
 
 /**
@@ -120,9 +120,28 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
     // Store a copy of the broadcast variable in the driver so that tasks run on the driver
     // do not create a duplicate copy of the broadcast variable's value.
     val blockManager = SparkEnv.get.blockManager
-    if (!blockManager.putSingle(broadcastId, value, MEMORY_AND_DISK, tellMaster = false)) {
+    var putFail = false
+    if (org.apache.spark.util.collection.Utils.isIterable(value)) {
+        if (!blockManager.putIterator(
+          broadcastId,
+          value.asInstanceOf[Iterable[_]].toIterator,
+          MEMORY_AND_DISK,
+          tellMaster = false)) {
+          putFail = true
+        }
+    } else {
+      if (!blockManager.putSingle(
+        broadcastId,
+        value,
+        MEMORY_AND_DISK,
+        tellMaster = false)) {
+        putFail = true
+      }
+    }
+    if (putFail) {
       throw new SparkException(s"Failed to store $broadcastId in BlockManager")
     }
+
     val blocks =
       TorrentBroadcast.blockifyObject(value, blockSize, SparkEnv.get.serializer, compressionCodec)
     if (checksumEnabled) {
@@ -214,13 +233,32 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
         blockManager.getLocalValues(broadcastId) match {
           case Some(blockResult) =>
             if (blockResult.data.hasNext) {
-              val x = blockResult.data.next().asInstanceOf[T]
-              releaseLock(broadcastId)
-
+              var elements = Seq[Any]()
+              var x = blockResult.data.next.asInstanceOf[T]
+              elements = elements :+ x
+              try {
+                do {
+                  elements = elements :+ blockResult.data.next
+                } while (blockResult.data.hasNext)
+              } catch {
+                // If a NoSuchElementException catch, that means
+                // blockResult.data has exactly only one element
+                case e: NoSuchElementException =>
+              }
+              if (elements.size > 1) {
+                // TODO problem
+                // 这里有一个没有解决的问题就是, 在类型转换时, 可能抛出ClassCastException异常.
+                // 例如, Set不能转换为HashSet（父类不能转换为子类）, 用户自定义的继承Iterable的类
+                // 难以转换等等
+                // 可以通过已经存在的BroadCastSuite里的测试，但是，添加Set或Map类型的单元测试，就fail
+                x = elements.asInstanceOf[T]
+              }
+              if (!blockResult.data.asInstanceOf[CompletionIterator[_, _]].isCompleted()) {
+                releaseLock(broadcastId)
+              }
               if (x != null) {
                 broadcastCache.put(broadcastId, x)
               }
-
               x
             } else {
               throw new SparkException(s"Failed to get locally stored broadcast data: $broadcastId")
