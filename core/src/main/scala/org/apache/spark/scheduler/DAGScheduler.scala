@@ -1582,9 +1582,13 @@ class DAGScheduler(
     }
     val dependentJobs: Seq[ActiveJob] =
       activeJobs.filter(job => stageDependsOn(job.finalStage, failedStage)).toSeq
-    failedStage.latestInfo.completionTime = Some(clock.getTimeMillis())
+    val dependentJobIds: Set[Int] = dependentJobs.map(_.jobId).toSet
     for (job <- dependentJobs) {
-      failJobAndIndependentStages(job, s"Job aborted due to stage failure: $reason", exception)
+      failJobAndIndependentStages(
+        job,
+        s"Job aborted due to stage failure: $reason",
+        exception,
+        dependentJobIds)
     }
     if (dependentJobs.isEmpty) {
       logInfo("Ignoring failure of " + failedStage + " because all jobs depending on it are done")
@@ -1595,7 +1599,8 @@ class DAGScheduler(
   private def failJobAndIndependentStages(
       job: ActiveJob,
       failureReason: String,
-      exception: Option[Throwable] = None): Unit = {
+      exception: Option[Throwable] = None,
+      jobsToFail: Set[Int] = Set()): Unit = {
     val error = new SparkException(failureReason, exception.getOrElse(null))
     var ableToCancelStages = true
 
@@ -1614,7 +1619,7 @@ class DAGScheduler(
         logError(
           "Job %d not registered for stage %d even though that stage was registered for the job"
             .format(job.jobId, stageId))
-      } else if (jobsForStage.get.size == 1) {
+      } else if (jobsForStage.get.size == 1 || jobsForStage.get.subsetOf(jobsToFail)) {
         if (!stageIdToStage.contains(stageId)) {
           logError(s"Missing Stage for stage with id $stageId")
         } else {

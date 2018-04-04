@@ -1547,6 +1547,77 @@ class DAGSchedulerSuite extends SparkFunSuite with LocalSparkContext with TimeLi
     assertDataStructuresEmpty()
   }
 
+  /**
+   * When a stage needs to be aborted, it will leads to some jobs failed. And we
+   * also needs to fail stages which are independent in those jobs or shared
+   * by those failing jobs only.
+   *
+   * This test creates the following dependency graph:
+   *    rdd4           rdd1            rdd2
+   *     |              |               |
+   *  shuffle3       shuffle1        shuffle2
+   *     |\             |              /|
+   *     | \------------|-------------/ |
+   *     |              |               |
+   *    rdd6           rdd5            rdd3
+   *
+   *    job2           job3             job1
+   *
+   * We start job1, job2, job3 in order. And we abort stage(0, rdd2), this leads
+   * to fail job1&job3. In addition, it fails stage(0, rdd2), stage(4, rdd1),
+   * but survive stage(2, rdd4) and completes job2.
+   *
+   */
+  test("stage should be failed when shared by multiple failing jobs only") {
+    val rdd1 = new MyRDD(sc, 1, Nil)
+    val shuffle1 = new ShuffleDependency(rdd1, new HashPartitioner(1))
+    val rdd2 = new MyRDD(sc, 1, Nil)
+    val shuffle2 = new ShuffleDependency(rdd2, new HashPartitioner(1))
+    val rdd3 = new MyRDD(sc, 1, List(shuffle2))
+    val rdd4 = new MyRDD(sc, 1, Nil)
+    val shuffle3 = new ShuffleDependency(rdd4, new HashPartitioner(1))
+    val rdd5 = new MyRDD(sc, 1, List(shuffle1, shuffle2, shuffle3))
+    val rdd6 = new MyRDD(sc, 1, List(shuffle3))
+
+    // submit job1, job2, job3 in order, so that we can make sure
+    // about stages' ids and rdds.
+    val jobId1 = submit(rdd3, Array(0))
+    val jobId2 = submit(rdd6, Array(0))
+    val jobId3 = submit(rdd5, Array(0))
+
+    val stageIndependentInJob3 = scheduler.stageIdToStage(4)
+    val stageSharedByJob1_3 = scheduler.stageIdToStage(0)
+    val stageSharedByJob2_3 = scheduler.stageIdToStage(2)
+    assert(stageIndependentInJob3.jobIds === Set(jobId3))
+    assert(stageSharedByJob1_3.jobIds === Set(jobId1, jobId3))
+    assert(stageSharedByJob2_3.jobIds === Set(jobId2, jobId3))
+
+    assert(scheduler.activeJobs.size === 3)
+    assert(scheduler.stageIdToStage.keySet.size === 6)
+    assert(scheduler.runningStages ===
+      Set(stageIndependentInJob3, stageSharedByJob1_3, stageSharedByJob2_3))
+
+
+    // we chose stageSharedByJob1_3 to abort, so that job1&job3 would be failed
+    val failedStage = stageSharedByJob1_3
+    scheduler.abortStage(failedStage, "test to fail a shared stage", None)
+    // note: only stages in runningStages will be failed.
+    // stageIndependentInJob3 is only used by job3, so it can be failed; stageSharedByJob2_3
+    // is shared by job2&job3, and job2 is likely to use it. So it can not be failed. And,
+    // though, stageSharedByJob1_3 is shared by job1&job3, however, job1&job3 are to
+    // fail due to a abort stage. So, it can be failed since no more jobs would use it.
+    // so it can be failed;
+    assert(cancelledStages.size === 2)
+
+    // only job2 is active now
+    assert(scheduler.activeJobs.size === 1)
+    complete(taskSets(1), Seq((Success, makeMapStatus("host", 1))))
+    complete(taskSets(3), Seq((Success, 1)))
+    // job2 completed
+    assert(scheduler.activeJobs.size === 0)
+    assertDataStructuresEmpty()
+  }
+
   def checkJobPropertiesAndPriority(taskSet: TaskSet, expected: String, priority: Int): Unit = {
     assert(taskSet.properties != null)
     assert(taskSet.properties.getProperty("testProperty") === expected)
