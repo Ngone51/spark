@@ -35,6 +35,9 @@ import org.apache.spark.scheduler.SchedulingMode._
 import org.apache.spark.util.{AccumulatorV2, Clock, LongAccumulator, SystemClock, Utils}
 import org.apache.spark.util.collection.MedianHeap
 
+// TODO(wuyi) handle resources
+case class ReservedWorkOffer(execId: String, host: String, locality: TaskLocality.Value)
+
 /**
  * Schedules the tasks within a single TaskSet in the TaskSchedulerImpl. This class keeps track of
  * each task, retries tasks if they fail (up to a limited number of times), and
@@ -172,6 +175,10 @@ private[spark] class TaskSetManager(
   // was printed. This should ideally be an LRU map that can drop old exceptions automatically.
   private val recentExceptions = HashMap[String, (Int, Long)]()
 
+  private val readyTaskToReservedWorkOffer = HashMap[Int, (Boolean, ReservedWorkOffer)]()
+
+  private val execIdToReadyTasks = HashMap[String, HashSet[Int]]()
+
   // Figure out the current map output tracker epoch and set it on all tasks
   val epoch = sched.mapOutputTracker.getEpoch
   logDebug("Epoch for " + taskSet + ": " + epoch)
@@ -264,6 +271,10 @@ private[spark] class TaskSetManager(
     }
 
     pendingTaskSetToAddTo.all += index
+  }
+
+  def getReadyTaskToReservedWorkOffer: HashMap[Int, (Boolean, ReservedWorkOffer)] = {
+    readyTaskToReservedWorkOffer
   }
 
   /**
@@ -378,6 +389,116 @@ private[spark] class TaskSetManager(
     None
   }
 
+  def setupTask(
+      index: Int,
+      execId: String,
+      host: String,
+      taskLocality: TaskLocality.Value,
+      launchTime: Long,
+      speculative: Boolean,
+      availableResources: Map[String, Seq[String]] = Map.empty)
+    : TaskDescription = {
+    val task = tasks(index)
+    val taskId = sched.newTaskId()
+    // Do various bookkeeping
+    copiesRunning(index) += 1
+    val attemptNum = taskAttempts(index).size
+    val info = new TaskInfo(taskId, index, attemptNum, launchTime,
+      execId, host, taskLocality, speculative)
+    taskInfos(taskId) = info
+    taskAttempts(index) = info :: taskAttempts(index)
+    // Serialize and return the task
+    val serializedTask: ByteBuffer = try {
+      ser.serialize(task)
+    } catch {
+      // If the task cannot be serialized, then there's no point to re-attempt the task,
+      // as it will always fail. So just abort the whole task-set.
+      case NonFatal(e) =>
+        val msg = s"Failed to serialize task $taskId, not attempting to retry it."
+        logError(msg, e)
+        abort(s"$msg Exception during serialization: $e")
+        throw new TaskNotSerializableException(e)
+    }
+    if (serializedTask.limit() > TaskSetManager.TASK_SIZE_TO_WARN_KIB * 1024 &&
+      !emittedTaskSizeWarning) {
+      emittedTaskSizeWarning = true
+      logWarning(s"Stage ${task.stageId} contains a task of very large size " +
+        s"(${serializedTask.limit() / 1024} KiB). The maximum recommended task size is " +
+        s"${TaskSetManager.TASK_SIZE_TO_WARN_KIB} KiB.")
+    }
+
+    addRunningTask(taskId)
+
+    // We used to log the time it takes to serialize the task, but task size is already
+    // a good proxy to task serialization time.
+    // val timeTaken = clock.getTime() - startTime
+    val taskName = s"task ${info.id} in stage ${taskSet.id}"
+    logInfo(s"Starting $taskName (TID $taskId, $host, executor ${info.executorId}, " +
+      s"partition ${task.partitionId}, $taskLocality, ${serializedTask.limit()} bytes)")
+
+    val extraResources = sched.resourcesReqsPerTask.map { taskReq =>
+      val rName = taskReq.resourceName
+      val count = taskReq.amount
+      val rAddresses = availableResources.getOrElse(rName, Seq.empty)
+      assert(rAddresses.size >= count, s"Required $count $rName addresses, but only " +
+        s"${rAddresses.size} available.")
+      // We'll drop the allocated addresses later inside TaskSchedulerImpl.
+      val allocatedAddresses = rAddresses.take(count)
+      (rName, new ResourceInformation(rName, allocatedAddresses.toArray))
+    }.toMap
+
+    sched.dagScheduler.taskStarted(task, info)
+
+    new TaskDescription(
+      taskId,
+      attemptNum,
+      execId,
+      taskName,
+      index,
+      task.partitionId,
+      addedFiles,
+      addedJars,
+      task.localProperties,
+      extraResources,
+      serializedTask)
+  }
+
+  def releaseReservedWorkOfferByLocality(num: Int): Unit = {
+    val sortedReservedWorkOffer = readyTaskToReservedWorkOffer.toArray.sortBy {
+      case (_, (_, reservedOffer)) =>
+        reservedOffer.locality
+    }
+
+    val toRelease = sortedReservedWorkOffer.takeRight(num)
+    toRelease.foreach {
+      case (index, (_, _)) =>
+        releaseReservedWorkOffer(index)
+    }
+  }
+
+  def releaseReservedWorkOffer(): Unit = {
+    execIdToReadyTasks.foreach { case (_, tasks) =>
+      tasks.foreach(releaseReservedWorkOffer)
+    }
+  }
+
+  private def releaseReservedWorkOffer(index: Int): Unit = {
+    readyTaskToReservedWorkOffer.remove(index) match {
+      case Some((_, reservedOffer)) =>
+        val execId = reservedOffer.execId
+        execIdToReadyTasks(execId) -= index
+        if (execIdToReadyTasks(execId).isEmpty) {
+          execIdToReadyTasks.remove(execId)
+        }
+        // TODO hui bu hui chongfu ?
+        addPendingTask(index)
+        logInfo(s"ready task $index in barrier TaskSet ${taskSet.id} release " +
+          s"reserved WorkOffer(executor ${reservedOffer.execId}, host ${reservedOffer.host}).")
+      case None =>
+        logWarning(s"Trying to release reserved WorkOffer for an unknown ready task.")
+    }
+  }
+
   /**
    * Respond to an offer of a single executor from the scheduler by finding a task
    *
@@ -417,72 +538,46 @@ private[spark] class TaskSetManager(
       dequeueTask(execId, host, allowedLocality).map { case ((index, taskLocality, speculative)) =>
         // Found a task; do some bookkeeping and return a task description
         val task = tasks(index)
-        val taskId = sched.newTaskId()
-        // Do various bookkeeping
-        copiesRunning(index) += 1
-        val attemptNum = taskAttempts(index).size
-        val info = new TaskInfo(taskId, index, attemptNum, curTime,
-          execId, host, taskLocality, speculative)
-        taskInfos(taskId) = info
-        taskAttempts(index) = info :: taskAttempts(index)
         // Update our locality level for delay scheduling
         // NO_PREF will not affect the variables related to delay scheduling
         if (maxLocality != TaskLocality.NO_PREF) {
           currentLocalityIndex = getLocalityIndex(taskLocality)
           lastLaunchTime = curTime
         }
-        // Serialize and return the task
-        val serializedTask: ByteBuffer = try {
-          ser.serialize(task)
-        } catch {
-          // If the task cannot be serialized, then there's no point to re-attempt the task,
-          // as it will always fail. So just abort the whole task-set.
-          case NonFatal(e) =>
-            val msg = s"Failed to serialize task $taskId, not attempting to retry it."
-            logError(msg, e)
-            abort(s"$msg Exception during serialization: $e")
-            throw new TaskNotSerializableException(e)
+        if (isBarrier) {
+          var replacedExecId = execId
+          if (readyTaskToReservedWorkOffer.contains(index)) {
+            val currentReservedResourceOffer = readyTaskToReservedWorkOffer(index)._2
+            if (taskLocality < currentReservedResourceOffer.locality) {
+              replacedExecId = currentReservedResourceOffer.execId
+              readyTaskToReservedWorkOffer(index) =
+                (speculative, ReservedWorkOffer(execId, host, taskLocality))
+              val readyTasks = execIdToReadyTasks.getOrElse(execId, HashSet[Int]())
+              readyTasks.add(index)
+              execIdToReadyTasks(execId) = readyTasks
+            }
+          } else {
+            readyTaskToReservedWorkOffer(index) =
+              (speculative, ReservedWorkOffer(execId, host, taskLocality))
+            val readyTasks = execIdToReadyTasks.getOrElse(execId, HashSet[Int]())
+            readyTasks.add(index)
+            execIdToReadyTasks(execId) = readyTasks
+          }
+          new TaskDescription(
+            0,
+            0,
+            replacedExecId, // just take a ride
+            "",
+            index,
+            task.partitionId,
+            addedFiles,
+            addedJars,
+            task.localProperties,
+            Map.empty,
+            ByteBuffer.allocate(0))
+        } else {
+          setupTask(index, execId, host, taskLocality, curTime, speculative, availableResources)
         }
-        if (serializedTask.limit() > TaskSetManager.TASK_SIZE_TO_WARN_KIB * 1024 &&
-          !emittedTaskSizeWarning) {
-          emittedTaskSizeWarning = true
-          logWarning(s"Stage ${task.stageId} contains a task of very large size " +
-            s"(${serializedTask.limit() / 1024} KiB). The maximum recommended task size is " +
-            s"${TaskSetManager.TASK_SIZE_TO_WARN_KIB} KiB.")
-        }
-        addRunningTask(taskId)
-
-        // We used to log the time it takes to serialize the task, but task size is already
-        // a good proxy to task serialization time.
-        // val timeTaken = clock.getTime() - startTime
-        val taskName = s"task ${info.id} in stage ${taskSet.id}"
-        logInfo(s"Starting $taskName (TID $taskId, $host, executor ${info.executorId}, " +
-          s"partition ${task.partitionId}, $taskLocality, ${serializedTask.limit()} bytes)")
-
-        val extraResources = sched.resourcesReqsPerTask.map { taskReq =>
-          val rName = taskReq.resourceName
-          val count = taskReq.amount
-          val rAddresses = availableResources.getOrElse(rName, Seq.empty)
-          assert(rAddresses.size >= count, s"Required $count $rName addresses, but only " +
-            s"${rAddresses.size} available.")
-          // We'll drop the allocated addresses later inside TaskSchedulerImpl.
-          val allocatedAddresses = rAddresses.take(count)
-          (rName, new ResourceInformation(rName, allocatedAddresses.toArray))
-        }.toMap
-
-        sched.dagScheduler.taskStarted(task, info)
-        new TaskDescription(
-          taskId,
-          attemptNum,
-          execId,
-          taskName,
-          index,
-          task.partitionId,
-          addedFiles,
-          addedJars,
-          task.localProperties,
-          extraResources,
-          serializedTask)
       }
     } else {
       None
@@ -512,6 +607,8 @@ private[spark] class TaskSetManager(
         indexOffset -= 1
         val index = pendingTaskIds(indexOffset)
         if (copiesRunning(index) == 0 && !successful(index)) {
+          return true
+        } else if (isBarrier && !getReadyTaskToReservedWorkOffer.contains(index)) {
           return true
         } else {
           pendingTaskIds.remove(indexOffset)
@@ -971,6 +1068,15 @@ private[spark] class TaskSetManager(
       handleFailedTask(tid, TaskState.FAILED, ExecutorLostFailure(info.executorId, exitCausedByApp,
         Some(reason.toString)))
     }
+
+    execIdToReadyTasks.get(execId) match {
+      case Some(taskIndexes) =>
+        taskIndexes.foreach { index =>
+          releaseReservedWorkOffer(index)
+        }
+      case _ => // not a barrier TaskSet or no ready tasks reserve it
+    }
+
     // recalculate valid locality levels and waits when executor is lost
     recomputeLocality()
   }
