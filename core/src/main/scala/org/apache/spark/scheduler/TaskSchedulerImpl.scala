@@ -524,7 +524,7 @@ private[spark] class TaskSchedulerImpl(
 
     val sortedTaskSets = rootPool.getSortedTaskSetQueue
     val shuffledOffers = shuffleOffers(filteredOffers)
-    val availableCpus = excludeReservedCpus(shuffledOffers, sortedTaskSets)
+    val availableCpus = excludeReservedCpus(shuffledOffers, getSortedBarrierTaskSets)
     // TODO(wuyi) handle resources
     val availableResources = shuffledOffers.map(_.resources).toArray
     val execIdToOfferIndex =
