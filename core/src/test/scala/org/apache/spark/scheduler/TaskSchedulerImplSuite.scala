@@ -1177,7 +1177,7 @@ class TaskSchedulerImplSuite extends SparkFunSuite with LocalSparkContext with B
     assert(1 === taskDescriptions.length)
   }
 
-  test("barrier taskSet can launch all tasks after multiple resourceOffers round" +
+  test("barrier taskSet can launch all tasks after multiple resourceOffers round " +
     "until it accumulate sufficient resource") {
     val taskCpus = 2
     val taskScheduler = setupScheduler("spark.task.cpus" -> taskCpus.toString)
@@ -1195,7 +1195,7 @@ class TaskSchedulerImplSuite extends SparkFunSuite with LocalSparkContext with B
 
     // submit barrier taskSet 1, offer some resources, since the available Cpus are not
     // sufficient, so scheduler won't launch any tasks.
-    val ts1 = FakeTask.createBarrierTaskSet(3)
+    val ts1 = FakeTask.createBarrierTaskSet(3, 0, 0, 0)
     taskScheduler.submitTasks(ts1)
     val taskDescriptions1 = taskScheduler.resourceOffers(workerOffers1).flatten
     assert(0 === taskDescriptions1.length)
@@ -1203,7 +1203,7 @@ class TaskSchedulerImplSuite extends SparkFunSuite with LocalSparkContext with B
     // submit non-barrier taskSet 2, offer the same resources, since ts1 has
     // already reserved resources, so there're no more available Cpus for ts2
     // to launch any tasks.
-    val ts2 = FakeTask.createTaskSet(3)
+    val ts2 = FakeTask.createTaskSet(3, 1, 0)
     taskScheduler.submitTasks(ts2)
     val taskDescriptions2 = taskScheduler.resourceOffers(workerOffers1).flatten
     assert(0 === taskDescriptions2.length)
@@ -1226,10 +1226,10 @@ class TaskSchedulerImplSuite extends SparkFunSuite with LocalSparkContext with B
       new WorkerOffer("executor0", "host0", numFreeCores, Some("192.168.0.101:49625")),
       new WorkerOffer("executor1", "host1", numFreeCores, Some("192.168.0.101:49627")))
 
-    val ts1 = FakeTask.createBarrierTaskSet(2, 0, 0,
+    val ts1 = FakeTask.createBarrierTaskSet(2, 0, 0, 0,
       Seq(TaskLocation("host0", "executor0")),
       Seq(TaskLocation("host1", "executor0")))
-    val ts2 = FakeTask.createBarrierTaskSet(2, 1, 0,
+    val ts2 = FakeTask.createBarrierTaskSet(2, 1, 0, 0,
       Seq(TaskLocation("host1", "executor1")),
       Seq(TaskLocation("host0", "executor1")))
     taskScheduler.submitTasks(ts1)
