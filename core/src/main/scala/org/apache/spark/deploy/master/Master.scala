@@ -435,8 +435,7 @@ private[deploy] class Master(
       }
 
     case UnregisterApplication(applicationId) =>
-      logInfo(s"Received unregister request from application $applicationId")
-      idToApp.get(applicationId).foreach(finishApplication)
+      unregisterApplication(applicationId)
 
     case CheckForWorkerTimeOut =>
       timeOutDeadWorkers()
@@ -444,6 +443,10 @@ private[deploy] class Master(
   }
 
   override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
+    case UnregisterApplication(applicationId) =>
+      unregisterApplication(applicationId)
+      context.reply(true)
+
     case RequestSubmitDriver(description) =>
       if (state != RecoveryState.ALIVE) {
         val msg = s"${Utils.BACKUP_STANDALONE_MASTER_PREFIX}: $state. " +
@@ -527,6 +530,11 @@ private[deploy] class Master(
     case KillExecutors(appId, executorIds) =>
       val formattedExecutorIds = formatExecutorIds(executorIds)
       context.reply(handleKillExecutors(appId, formattedExecutorIds))
+  }
+
+  private def unregisterApplication(applicationId: String) = {
+    logInfo(s"Received unregister request from application $applicationId")
+    idToApp.get(applicationId).foreach(finishApplication)
   }
 
   override def onDisconnected(address: RpcAddress): Unit = {

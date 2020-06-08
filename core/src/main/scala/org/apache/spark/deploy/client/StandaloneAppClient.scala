@@ -141,9 +141,15 @@ private[spark] class StandaloneAppClient(
      * Send a message to the current master. If we have not yet registered successfully with any
      * master, the message will be dropped.
      */
-    private def sendToMaster(message: Any): Unit = {
+    private def sendToMaster(message: Any, sync: Boolean): Unit = {
       master match {
-        case Some(masterRef) => masterRef.send(message)
+        case Some(masterRef) =>
+          if (sync) {
+            masterRef.askSync[Boolean](message)
+            ()
+          } else {
+            masterRef.send(message)
+          }
         case None => logWarning(s"Drop $message because has not yet connected to master")
       }
     }
@@ -198,7 +204,8 @@ private[spark] class StandaloneAppClient(
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
       case StopAppClient =>
         markDead("Application has been stopped.")
-        sendToMaster(UnregisterApplication(appId.get))
+        sendToMaster(UnregisterApplication(appId.get),
+          conf.getBoolean("syncUnregisterApplicationInLocalCluster", false))
         context.reply(true)
         stop()
 
