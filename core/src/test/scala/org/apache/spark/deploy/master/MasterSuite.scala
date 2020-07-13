@@ -60,6 +60,9 @@ class MockWorker(master: RpcEndpointRef, conf: SparkConf = new SparkConf) extend
   val driverIdToAppId = new mutable.HashMap[String, String]()
   def newDriver(driverId: String): RpcEndpointRef = {
     val name = s"driver_${drivers.size}"
+    // scalastyle:off
+    println(s"new Driver: $name")
+    // scalastyle:on
     rpcEnv.setupEndpoint(name, new RpcEndpoint {
       override val rpcEnv: RpcEnv = MockWorker.this.rpcEnv
       override def receive: PartialFunction[Any, Unit] = {

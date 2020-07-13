@@ -157,6 +157,9 @@ private[netty] class NettyRpcEnv(
 
   private def postToOutbox(receiver: NettyRpcEndpointRef, message: OutboxMessage): Unit = {
     if (receiver.client != null) {
+      // scalastyle:off
+      println(s"NettyRpcEnc.receiver.client != null")
+      // scalastyle:on
       message.sendWith(receiver.client)
     } else {
       require(receiver.address != null,
@@ -176,10 +179,16 @@ private[netty] class NettyRpcEnv(
         }
       }
       if (stopped.get) {
+        // scalastyle:off
+        println(s"NettyRpcEnc.stopped")
+        // scalastyle:on
         // It's possible that we put `targetOutbox` after stopping. So we need to clean it.
         outboxes.remove(receiver.address)
         targetOutbox.stop()
       } else {
+        // scalastyle:off
+        println(s"NettyRpcEnc.targetOutbox.send")
+        // scalastyle:on
         targetOutbox.send(message)
       }
     }
@@ -190,11 +199,17 @@ private[netty] class NettyRpcEnv(
     if (remoteAddr == address) {
       // Message to a local RPC endpoint.
       try {
+        // scalastyle:off
+        println(s"NettyRpcEnc.send local")
+        // scalastyle:on
         dispatcher.postOneWayMessage(message)
       } catch {
         case e: RpcEnvStoppedException => logDebug(e.getMessage)
       }
     } else {
+      // scalastyle:off
+      println(s"NettyRpcEnc.postToOutbox")
+      // scalastyle:on
       // Message to a remote RPC endpoint.
       postToOutbox(message.receiver, OneWayOutboxMessage(message.serialize(this)))
     }

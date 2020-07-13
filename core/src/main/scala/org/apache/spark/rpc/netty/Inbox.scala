@@ -112,7 +112,13 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
             }
 
           case OneWayMessage(_sender, content) =>
+            // scalastyle:off
+            println(s"Inbox OneWayMessage endpoint ${endpointName}")
+            // scalastyle:on
             endpoint.receive.applyOrElse[Any, Unit](content, { msg =>
+              // scalastyle:off
+              println(s"Unsupported message $message from ${_sender}")
+              // scalastyle:on
               throw new SparkException(s"Unsupported message $message from ${_sender}")
             })
 
