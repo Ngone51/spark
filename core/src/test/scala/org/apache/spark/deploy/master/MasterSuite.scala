@@ -64,6 +64,9 @@ class MockWorker(master: RpcEndpointRef, conf: SparkConf = new SparkConf) extend
       override val rpcEnv: RpcEnv = MockWorker.this.rpcEnv
       override def receive: PartialFunction[Any, Unit] = {
         case RegisteredApplication(appId, _) =>
+          // scalastyle:off
+          println(s"$name.RegisteredApplication.")
+          // scalastyle:on
           apps(appId) = appId
           driverIdToAppId(driverId) = appId
       }
@@ -118,6 +121,10 @@ class MockExecutorLaunchFailWorker(master: Master, conf: SparkConf = new SparkCo
       // LaunchExecutor message until we validate registering app succeeds.
       eventually(timeout(5.seconds)) {
         // an app would be registered with Master once Driver set up
+        // scalastyle:off
+        println(s"driver apps: ${apps.keys.mkString(", ")}")
+        println(s"master apps: ${master.idToApp.keys.mkString(", ")}")
+        // scalastyle:on
         assert(apps.nonEmpty)
         assert(master.idToApp.keySet.intersect(apps.keySet) == apps.keySet)
       }
