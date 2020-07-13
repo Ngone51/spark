@@ -108,6 +108,9 @@ class MockExecutorLaunchFailWorker(master: Master, conf: SparkConf = new SparkCo
 
   override def receive: PartialFunction[Any, Unit] = {
     case LaunchDriver(driverId, _, _) =>
+      // scalastyle:off
+      println(s"MockExecutorLaunchFailWorker.LaunchDriver.")
+      // scalastyle:on
       master.self.send(RegisterApplication(appDesc, newDriver(driverId)))
 
       // Below code doesn't make driver stuck, as newDriver opens another rpc endpoint for
@@ -123,6 +126,9 @@ class MockExecutorLaunchFailWorker(master: Master, conf: SparkConf = new SparkCo
       // scalastyle:on
       appRegistered.countDown()
     case LaunchExecutor(_, appId, execId, _, _, _, _) =>
+      // scalastyle:off
+      println(s"MockExecutorLaunchFailWorker.LaunchExecutor.")
+      // scalastyle:on
       assert(appRegistered.await(10, TimeUnit.SECONDS))
       // scalastyle:off
       println(s"failedCnt=$failedCnt")
@@ -693,7 +699,7 @@ class MasterSuite extends SparkFunSuite
   }
 
   // TODO(SPARK-32250): Enable the test back. It is flaky in GitHub Actions.
-  (Array.fill(50)(10) ++ Array.fill(50)(20)).zipWithIndex.foreach { case (time, i) =>
+  Array.fill(30)(10).zipWithIndex.foreach { case (time, i) =>
     test(s"SPARK-27510: Master should avoid dead loop " +
       s"while launching executor failed in Worker (timeout=$time)-$i") {
       val master = makeAliveMaster()
@@ -712,6 +718,9 @@ class MasterSuite extends SparkFunSuite
           master.rpcEnv.address)
         master.self.send(workerRegMsg)
         val driver = DeployTestUtils.createDriverDesc()
+        // scalastyle:off
+        println("RequestSubmitDriver")
+        // scalastyle:on
         // mimic DriverClient to send RequestSubmitDriver to master
         master.self.askSync[SubmitDriverResponse](RequestSubmitDriver(driver))
 

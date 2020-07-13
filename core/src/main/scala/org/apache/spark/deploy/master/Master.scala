@@ -282,7 +282,13 @@ private[deploy] class Master(
       // TODO Prevent repeated registrations from some driver
       if (state == RecoveryState.STANDBY) {
         // ignore, don't send response
+        // scalastyle:off
+        println(s"RegisterApplication: MASTER STANDBY")
+        // scalastyle:on
       } else {
+        // scalastyle:off
+        println(s"RegisterApplication: Registering app")
+        // scalastyle:on
         logInfo("Registering app " + description.name)
         val app = createApplication(description, driver)
         registerApplication(app)
@@ -444,10 +450,16 @@ private[deploy] class Master(
   override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
     case RequestSubmitDriver(description) =>
       if (state != RecoveryState.ALIVE) {
+        // scalastyle:off
+        println(s"RequestSubmitDriver: Master Not Alive.")
+        // scalastyle:on
         val msg = s"${Utils.BACKUP_STANDALONE_MASTER_PREFIX}: $state. " +
           "Can only accept driver submissions in ALIVE state."
         context.reply(SubmitDriverResponse(self, false, None, msg))
       } else {
+        // scalastyle:off
+        println(s"RequestSubmitDriver: Master Alive.")
+        // scalastyle:on
         logInfo("Driver submitted " + description.command.mainClass)
         val driver = createDriver(description)
         persistenceEngine.addDriver(driver)
@@ -827,6 +839,9 @@ private[deploy] class Master(
   }
 
   private def launchExecutor(worker: WorkerInfo, exec: ExecutorDesc): Unit = {
+    // scalastyle:off
+    println(s"Master.LaunchExecutor.")
+    // scalastyle:on
     logInfo("Launching executor " + exec.fullId + " on worker " + worker.id)
     worker.addExecutor(exec)
     worker.endpoint.send(LaunchExecutor(masterUrl, exec.application.id, exec.id,
@@ -1111,6 +1126,9 @@ private[deploy] class Master(
   }
 
   private def launchDriver(worker: WorkerInfo, driver: DriverInfo): Unit = {
+    // scalastyle:off
+    println(s"RequestSubmitDriver:  Launch Driver.")
+    // scalastyle:on
     logInfo("Launching driver " + driver.id + " on worker " + worker.id)
     worker.addDriver(driver)
     driver.worker = Some(worker)
