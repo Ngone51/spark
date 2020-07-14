@@ -117,7 +117,9 @@ class MockExecutorLaunchFailWorker(master: Master, conf: SparkConf = new SparkCo
       // scalastyle:off
       println(s"MockExecutorLaunchFailWorker.LaunchDriver.")
       // scalastyle:on
-      master.self.send(RegisterApplication(appDesc, newDriver(driverId)))
+      val driver = newDriver(driverId)
+      Thread.sleep(2000)
+      master.self.send(RegisterApplication(appDesc, driver))
 
       // Below code doesn't make driver stuck, as newDriver opens another rpc endpoint for
       // handling driver related messages. To simplify logic, we will block handling
