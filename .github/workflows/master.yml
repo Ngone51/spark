@@ -28,21 +28,22 @@ jobs:
         # Note that the modules below are from sparktestsupport/modules.py.
         modules:
           - |-
-            core, unsafe, kvstore, avro,
-            network_common, network_shuffle, repl, launcher
-            examples, sketch, graphx
-          - |-
-            catalyst, hive-thriftserver
-          - |-
-            streaming, sql-kafka-0-10, streaming-kafka-0-10,
-            mllib-local, mllib,
-            yarn, mesos, kubernetes, hadoop-cloud, spark-ganglia-lgpl
-          - |-
-            pyspark-sql, pyspark-mllib, pyspark-resource
-          - |-
-            pyspark-core, pyspark-streaming, pyspark-ml
-          - |-
-            sparkr
+            core
+#            unsafe, kvstore, avro,
+#            network_common, network_shuffle, repl, launcher
+#            examples, sketch, graphx
+#          - |-
+#            catalyst, hive-thriftserver
+#          - |-
+#            streaming, sql-kafka-0-10, streaming-kafka-0-10,
+#            mllib-local, mllib,
+#            yarn, mesos, kubernetes, hadoop-cloud, spark-ganglia-lgpl
+#          - |-
+#            pyspark-sql, pyspark-mllib, pyspark-resource
+#          - |-
+#            pyspark-core, pyspark-streaming, pyspark-ml
+#          - |-
+#            sparkr
         # Here, we split Hive and SQL tests into some of slow ones and the rest of them.
         included-tags: [""]
         excluded-tags: [""]
