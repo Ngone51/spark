@@ -48,7 +48,7 @@ jobs:
         included-tags: [""]
         excluded-tags: [""]
         comment: [""]
-        include:
+        include: [""]
 #          # Hive tests
 #          - modules: hive
 #            java: 1.8
