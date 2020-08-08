@@ -123,6 +123,8 @@ private class SharedMessageLoop(
   /** Thread pool used for dispatching messages. */
   override protected val threadpool: ThreadPoolExecutor = {
     val numThreads = getNumOfThreads(conf)
+    // scalastyle:off
+    println(s"numThreads = $numThreads")
     val pool = ThreadUtils.newDaemonFixedThreadPool(numThreads, "dispatcher-event-loop")
     for (i <- 0 until numThreads) {
       pool.execute(receiveLoopRunnable)
