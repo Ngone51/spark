@@ -126,10 +126,6 @@ class MockExecutorLaunchFailWorker(master: Master, conf: SparkConf = new SparkCo
       // LaunchExecutor message until we validate registering app succeeds.
       eventually(timeout(5.seconds)) {
         // an app would be registered with Master once Driver set up
-        // scalastyle:off
-        println(s"driver apps: ${apps.keys.mkString(", ")}")
-        println(s"master apps: ${master.idToApp.keys.mkString(", ")}")
-        // scalastyle:on
         assert(apps.nonEmpty)
         assert(master.idToApp.keySet.intersect(apps.keySet) == apps.keySet)
       }
@@ -142,13 +138,7 @@ class MockExecutorLaunchFailWorker(master: Master, conf: SparkConf = new SparkCo
       println(s"MockExecutorLaunchFailWorker.LaunchExecutor.")
       // scalastyle:on
       assert(appRegistered.await(10, TimeUnit.SECONDS))
-      // scalastyle:off
-      println(s"failedCnt=$failedCnt")
-      // scalastyle:on
       if (failedCnt == 0) {
-        // scalastyle:off
-        println("launchExecutorReceived countDown")
-        // scalastyle:on
         launchExecutorReceived.countDown()
       }
       assert(master.idToApp.contains(appId))

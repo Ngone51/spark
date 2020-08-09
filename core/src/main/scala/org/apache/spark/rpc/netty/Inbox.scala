@@ -76,6 +76,8 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
 
   // OnStart should be the first message to process
   inbox.synchronized {
+    // scalastyle:off
+    println(s"Add message ($endpointName): OnStart")
     messages.add(OnStart)
   }
 
@@ -173,6 +175,8 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
       // We already put "OnStop" into "messages", so we should drop further messages
       onDrop(message)
     } else {
+      // scalastyle:off
+      println(s"Add message ($endpointName): $message")
       messages.add(message)
       false
     }
