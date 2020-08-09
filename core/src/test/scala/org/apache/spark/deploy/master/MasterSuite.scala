@@ -701,7 +701,7 @@ class MasterSuite extends SparkFunSuite
   }
 
   // TODO(SPARK-32250): Enable the test back. It is flaky in GitHub Actions.
-  Array.fill(30)(10).zipWithIndex.foreach { case (time, i) =>
+  Array.fill(1)(10).zipWithIndex.foreach { case (time, i) =>
     test(s"SPARK-27510: Master should avoid dead loop " +
       s"while launching executor failed in Worker (timeout=$time)-$i") {
       val master = makeAliveMaster()

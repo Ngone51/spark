@@ -200,7 +200,7 @@ private[netty] class NettyRpcEnv(
       // Message to a local RPC endpoint.
       try {
         // scalastyle:off
-        println(s"NettyRpcEnc.send local")
+        println(s"NettyRpcEnc.send local $message")
         // scalastyle:on
         dispatcher.postOneWayMessage(message)
       } catch {

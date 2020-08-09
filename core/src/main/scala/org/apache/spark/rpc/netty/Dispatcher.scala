@@ -72,9 +72,13 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       try {
         messageLoop = endpoint match {
           case e: IsolatedRpcEndpoint =>
+            // scalastyle:off
+            println(s"DedicatedMessageLoop loop: $name")
             new DedicatedMessageLoop(name, e, this)
           case _ =>
             sharedLoop.register(name, endpoint)
+            // scalastyle:off
+            println(s"share loop: $name")
             sharedLoop
         }
         endpoints.put(name, messageLoop)

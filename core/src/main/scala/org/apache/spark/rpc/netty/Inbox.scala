@@ -91,6 +91,11 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
         return
       }
       message = messages.poll()
+      // scalastyle:off
+      println(s"${Thread.currentThread().getName} poll" +
+        s" $message ${endpointName}")
+      import scala.collection.JavaConverters._
+      println(messages.asScala.mkString(", "))
       if (message != null) {
         numActiveThreads += 1
       } else {
@@ -115,7 +120,8 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
 
           case OneWayMessage(_sender, content) =>
             // scalastyle:off
-            println(s"Inbox OneWayMessage endpoint ${endpointName}")
+            println(s"${Thread.currentThread().getName} Inbox" +
+              s" OneWayMessage endpoint ${endpointName} start")
             // scalastyle:on
             endpoint.receive.applyOrElse[Any, Unit](content, { msg =>
               // scalastyle:off
@@ -123,8 +129,14 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
               // scalastyle:on
               throw new SparkException(s"Unsupported message $message from ${_sender}")
             })
+            // scalastyle:off
+            println(s"${Thread.currentThread().getName} Inbox" +
+              s" OneWayMessage endpoint ${endpointName} done")
 
           case OnStart =>
+            // scalastyle:off
+            println(s"${Thread.currentThread().getName} Inbox" +
+              s" OnStart ${endpointName} start")
             endpoint.onStart()
             if (!endpoint.isInstanceOf[ThreadSafeRpcEndpoint]) {
               inbox.synchronized {
@@ -133,6 +145,9 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
                 }
               }
             }
+            // scalastyle:off
+            println(s"${Thread.currentThread().getName} Inbox" +
+              s" OnStart ${endpointName} done")
 
           case OnStop =>
             val activeThreads = inbox.synchronized { inbox.numActiveThreads }
@@ -178,6 +193,8 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
       // scalastyle:off
       println(s"Add message ($endpointName): $message")
       messages.add(message)
+      import scala.collection.JavaConverters._
+      println(messages.asScala.mkString(", "))
       false
     }
   }
