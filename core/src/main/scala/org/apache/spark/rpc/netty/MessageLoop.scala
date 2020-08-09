@@ -109,7 +109,12 @@ private class SharedMessageLoop(
 
   private def getNumOfThreads(conf: SparkConf): Int = {
     val availableCores =
-      if (numUsableCores > 0) numUsableCores else Runtime.getRuntime.availableProcessors()
+      if (numUsableCores > 0) numUsableCores else {
+        val core = Runtime.getRuntime.availableProcessors()
+        // scalastyle:off
+        println(s"availableProcessors = $core")
+        core
+      }
 
     val modNumThreads = conf.get(RPC_NETTY_DISPATCHER_NUM_THREADS)
       .getOrElse(math.max(2, availableCores))
