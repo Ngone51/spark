@@ -109,11 +109,11 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
           case RpcMessage(_sender, content, context) =>
             try {
               // scalastyle:off
-              println(s"START ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, RpcMessage: $content, Sender: $_sender")
+              println(s"START ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, RpcMessage: $content, Sender: ${_sender}")
               endpoint.receiveAndReply(context).applyOrElse[Any, Unit](content, { msg =>
                 throw new SparkException(s"Unsupported message $message from ${_sender}")
               })
-              println(s"END ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, RpcMessage: $content, sender: $_sender")
+              println(s"END ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, RpcMessage: $content, sender: ${_sender}")
             } catch {
               case e: Throwable =>
                 context.sendFailure(e)
@@ -124,7 +124,7 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
 
           case OneWayMessage(_sender, content) =>
             // scalastyle:off
-            println(s"START ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, OneWayMessage: $content, Sender: $_sender")
+            println(s"START ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, OneWayMessage: $content, Sender: ${_sender}")
             // scalastyle:on
             endpoint.receive.applyOrElse[Any, Unit](content, { msg =>
               // scalastyle:off
@@ -133,7 +133,7 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
               throw new SparkException(s"Unsupported message $message from ${_sender}")
             })
             // scalastyle:off
-            println(s"END ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, OneWayMessage: $content, Sender: $_sender")
+            println(s"END ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, OneWayMessage: $content, Sender: ${_sender}")
 
           case OnStart =>
             // scalastyle:off
