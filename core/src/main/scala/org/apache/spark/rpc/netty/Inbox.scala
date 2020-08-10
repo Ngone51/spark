@@ -96,7 +96,7 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
       // scalastyle:off
       import scala.collection.JavaConverters._
       println(s"${Thread.currentThread().getName} Inbox: ${endpointName} poll(1) $message")
-      println(s"${Thread.currentThread().getName} Inbox: ${endpointName} Rest Message\n: ${messages.asScala.mkString("\n")}")
+      println(s"${Thread.currentThread().getName} Inbox: ${endpointName} Rest Message:\n ${messages.asScala.mkString("\n")}")
       if (message != null) {
         numActiveThreads += 1
       } else {

@@ -19,6 +19,7 @@ package org.apache.spark.rpc.netty
 
 import java.util.concurrent._
 
+import scala.util.Random
 import scala.util.control.NonFatal
 
 import org.apache.spark.{SparkConf, SparkContext}
@@ -130,8 +131,9 @@ private class SharedMessageLoop(
     val numThreads = getNumOfThreads(conf)
     // scalastyle:off
     println(s"numThreads = $numThreads")
-    val pool = ThreadUtils.newDaemonFixedThreadPool(numThreads, "dispatcher-event-loop")
-    for (i <- 0 until numThreads) {
+    val rnd = Random.nextInt(1000)
+    val pool = ThreadUtils.newDaemonFixedThreadPool(2, s"dispatcher-event-loop-${rnd}")
+    for (i <- 0 until 2) {
       pool.execute(receiveLoopRunnable)
     }
     pool
