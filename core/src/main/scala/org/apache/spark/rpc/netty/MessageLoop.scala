@@ -132,8 +132,8 @@ private class SharedMessageLoop(
     // scalastyle:off
     println(s"numThreads = $numThreads")
     val rnd = Random.nextInt(1000)
-    val pool = ThreadUtils.newDaemonFixedThreadPool(2, s"dispatcher-event-loop-${rnd}")
-    for (i <- 0 until 2) {
+    val pool = ThreadUtils.newDaemonFixedThreadPool(numThreads, s"dispatcher-event-loop-${rnd}")
+    for (i <- 0 until numThreads) {
       pool.execute(receiveLoopRunnable)
     }
     pool

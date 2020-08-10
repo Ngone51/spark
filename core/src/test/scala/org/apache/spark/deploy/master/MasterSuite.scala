@@ -708,7 +708,7 @@ class MasterSuite extends SparkFunSuite
       var worker: MockExecutorLaunchFailWorker = null
       try {
         val conf = new SparkConf()
-        conf.set(Network.RPC_NETTY_DISPATCHER_NUM_THREADS, 8)
+//        conf.set(Network.RPC_NETTY_DISPATCHER_NUM_THREADS, 8)
         worker = new MockExecutorLaunchFailWorker(master)
         worker.rpcEnv.setupEndpoint("worker", worker)
         val workerRegMsg = RegisterWorker(
