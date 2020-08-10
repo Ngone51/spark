@@ -86,16 +86,17 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
    */
   def process(dispatcher: Dispatcher): Unit = {
     var message: InboxMessage = null
+    // scalastyle:off
+    println(s"${Thread.currentThread().getName} Inbox: ${endpointName} requiring lock(2)")
     inbox.synchronized {
       if (!enableConcurrent && numActiveThreads != 0) {
         return
       }
       message = messages.poll()
       // scalastyle:off
-      println(s"${Thread.currentThread().getName} poll" +
-        s" $message ${endpointName}")
       import scala.collection.JavaConverters._
-      println(messages.asScala.mkString(", "))
+      println(s"${Thread.currentThread().getName} Inbox: ${endpointName} poll(1) $message")
+      println(s"${Thread.currentThread().getName} Inbox: ${endpointName} Rest Message\n: ${messages.asScala.mkString("\n")}")
       if (message != null) {
         numActiveThreads += 1
       } else {
@@ -107,9 +108,12 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
         message match {
           case RpcMessage(_sender, content, context) =>
             try {
+              // scalastyle:off
+              println(s"START ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, RpcMessage: $content, Sender: $_sender")
               endpoint.receiveAndReply(context).applyOrElse[Any, Unit](content, { msg =>
                 throw new SparkException(s"Unsupported message $message from ${_sender}")
               })
+              println(s"END ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, RpcMessage: $content, sender: $_sender")
             } catch {
               case e: Throwable =>
                 context.sendFailure(e)
@@ -120,8 +124,7 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
 
           case OneWayMessage(_sender, content) =>
             // scalastyle:off
-            println(s"${Thread.currentThread().getName} Inbox" +
-              s" OneWayMessage endpoint ${endpointName} start")
+            println(s"START ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, OneWayMessage: $content, Sender: $_sender")
             // scalastyle:on
             endpoint.receive.applyOrElse[Any, Unit](content, { msg =>
               // scalastyle:off
@@ -130,24 +133,22 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
               throw new SparkException(s"Unsupported message $message from ${_sender}")
             })
             // scalastyle:off
-            println(s"${Thread.currentThread().getName} Inbox" +
-              s" OneWayMessage endpoint ${endpointName} done")
+            println(s"END ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, OneWayMessage: $content, Sender: $_sender")
 
           case OnStart =>
             // scalastyle:off
-            println(s"${Thread.currentThread().getName} Inbox" +
-              s" OnStart ${endpointName} start")
+            println(s"START ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, OnStart")
             endpoint.onStart()
             if (!endpoint.isInstanceOf[ThreadSafeRpcEndpoint]) {
               inbox.synchronized {
                 if (!stopped) {
                   enableConcurrent = true
+                  println(s"${Thread.currentThread().getName} Inbox: ${endpointName}, enableConcurrent = true")
                 }
               }
             }
             // scalastyle:off
-            println(s"${Thread.currentThread().getName} Inbox" +
-              s" OnStart ${endpointName} done")
+            println(s"END ===>>> ${Thread.currentThread().getName} Inbox: ${endpointName}, OnStart")
 
           case OnStop =>
             val activeThreads = inbox.synchronized { inbox.numActiveThreads }
@@ -168,6 +169,8 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
         }
       }
 
+      // scalastyle:off
+      println(s"${Thread.currentThread().getName} Inbox: ${endpointName} requiring lock(2)")
       inbox.synchronized {
         // "enableConcurrent" will be set to false after `onStop` is called, so we should check it
         // every time.
@@ -176,7 +179,11 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
           numActiveThreads -= 1
           return
         }
+        // scalastyle:off
         message = messages.poll()
+        import scala.collection.JavaConverters._
+        println(s"${Thread.currentThread().getName} Inbox: ${endpointName} poll(2) $message")
+        println(s"${Thread.currentThread().getName} Inbox: ${endpointName} Rest Messages\n: ${messages.asScala.mkString("\n")}")
         if (message == null) {
           numActiveThreads -= 1
           return
