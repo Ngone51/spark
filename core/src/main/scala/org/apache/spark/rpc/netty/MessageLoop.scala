@@ -19,6 +19,7 @@ package org.apache.spark.rpc.netty
 
 import java.util.concurrent._
 
+import scala.util.Random
 import scala.util.control.NonFatal
 
 import org.apache.spark.{SparkConf, SparkContext}
@@ -109,7 +110,12 @@ private class SharedMessageLoop(
 
   private def getNumOfThreads(conf: SparkConf): Int = {
     val availableCores =
-      if (numUsableCores > 0) numUsableCores else Runtime.getRuntime.availableProcessors()
+      if (numUsableCores > 0) numUsableCores else {
+        val core = Runtime.getRuntime.availableProcessors()
+        // scalastyle:off
+        println(s"availableProcessors = $core")
+        core
+      }
 
     val modNumThreads = conf.get(RPC_NETTY_DISPATCHER_NUM_THREADS)
       .getOrElse(math.max(2, availableCores))
@@ -122,8 +128,12 @@ private class SharedMessageLoop(
 
   /** Thread pool used for dispatching messages. */
   override protected val threadpool: ThreadPoolExecutor = {
-    val numThreads = getNumOfThreads(conf)
-    val pool = ThreadUtils.newDaemonFixedThreadPool(numThreads, "dispatcher-event-loop")
+//    val numThreads = getNumOfThreads(conf)
+    val numThreads = 8
+    // scalastyle:off
+    println(s"numThreads = $numThreads")
+    val rnd = Random.nextInt(1000)
+    val pool = ThreadUtils.newDaemonFixedThreadPool(numThreads, s"dispatcher-event-loop-${rnd}")
     for (i <- 0 until numThreads) {
       pool.execute(receiveLoopRunnable)
     }
