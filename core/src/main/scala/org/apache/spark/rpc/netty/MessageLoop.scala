@@ -128,7 +128,8 @@ private class SharedMessageLoop(
 
   /** Thread pool used for dispatching messages. */
   override protected val threadpool: ThreadPoolExecutor = {
-    val numThreads = getNumOfThreads(conf)
+//    val numThreads = getNumOfThreads(conf)
+    val numThreads = 8
     // scalastyle:off
     println(s"numThreads = $numThreads")
     val rnd = Random.nextInt(1000)
