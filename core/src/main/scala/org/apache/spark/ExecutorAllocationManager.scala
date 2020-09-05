@@ -460,7 +460,10 @@ private[spark] class ExecutorAllocationManager(
                 1
               }
             // scalastyle:off
-            println(s"numExecutorsToAddPerResourceProfileId=" +
+            println(s"doUpdateRequest.delta=$delta")
+            println(s"doUpdateRequest.numExecutorsToAddPerResourceProfileId=" +
+            s"${numExecutorsToAddPerResourceProfileId(rpId)}")
+            println(s"doUpdateRequest.numExecutorsToAddPerResourceProfileId=" +
             s"${numExecutorsToAddPerResourceProfileId(rpId)}")
             logDebug(s"Starting timer to add more executors (to " +
               s"expire in $sustainedSchedulerBacklogTimeoutS seconds)")
