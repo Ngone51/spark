@@ -396,6 +396,8 @@ private[spark] class ExecutorAllocationManager(
       maxNeeded: Int,
       rpId: Int,
       updatesNeeded: mutable.HashMap[Int, ExecutorAllocationManager.TargetNumUpdates]): Int = {
+    // scalastyle:off
+    println(s"maxNeeded=$maxNeeded")
     updateTargetExecs(addExecutors, maxNeeded, rpId, updatesNeeded)
   }
 
@@ -457,6 +459,9 @@ private[spark] class ExecutorAllocationManager(
               } else {
                 1
               }
+            // scalastyle:off
+            println(s"numExecutorsToAddPerResourceProfileId=" +
+            s"${numExecutorsToAddPerResourceProfileId(rpId)}")
             logDebug(s"Starting timer to add more executors (to " +
               s"expire in $sustainedSchedulerBacklogTimeoutS seconds)")
             addTime = now + TimeUnit.SECONDS.toNanos(sustainedSchedulerBacklogTimeoutS)
@@ -510,6 +515,8 @@ private[spark] class ExecutorAllocationManager(
       numExecutorsToAddPerResourceProfileId(rpId) = 1
       return 0
     }
+    // scalastyle:off
+    println(s"oldNumExecutorsTarget=$oldNumExecutorsTarget")
     // There's no point in wasting time ramping up to the number of executors we already have, so
     // make sure our target is at least as much as our current allocation:
     var numExecutorsTarget = math.max(numExecutorsTargetPerResourceProfileId(rpId),
@@ -520,7 +527,9 @@ private[spark] class ExecutorAllocationManager(
     numExecutorsTarget = math.min(numExecutorsTarget, maxNumExecutorsNeeded)
     // Ensure that our target fits within configured bounds:
     numExecutorsTarget = math.max(math.min(numExecutorsTarget, maxNumExecutors), minNumExecutors)
+    println(s"numExecutorsTarget=$numExecutorsTarget")
     val delta = numExecutorsTarget - oldNumExecutorsTarget
+    println(s"delta=$delta")
     numExecutorsTargetPerResourceProfileId(rpId) = numExecutorsTarget
 
     // If our target has not changed, do not send a message
