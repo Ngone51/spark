@@ -118,60 +118,62 @@ class ExecutorAllocationManagerSuite extends SparkFunSuite {
     assert(addTime(manager) === ExecutorAllocationManager.NOT_SET)
   }
 
-  test("add executors default profile") {
-    val manager = createManager(createConf(1, 10, 1))
-    post(SparkListenerStageSubmitted(createStageInfo(0, 1000)))
+  (0 until 20).foreach { i =>
+    test(s"add executors default profile $i") {
+      val manager = createManager(createConf(1, 10, 1))
+      post(SparkListenerStageSubmitted(createStageInfo(0, 1000)))
 
-    val updatesNeeded =
-      new mutable.HashMap[ResourceProfile, ExecutorAllocationManager.TargetNumUpdates]
+      val updatesNeeded =
+        new mutable.HashMap[ResourceProfile, ExecutorAllocationManager.TargetNumUpdates]
 
-    // Keep adding until the limit is reached
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 1)
-    assert(numExecutorsToAddForDefaultProfile(manager) === 1)
-    assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 1)
-    doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 2)
+      // Keep adding until the limit is reached
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 1)
+      assert(numExecutorsToAddForDefaultProfile(manager) === 1)
+      assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 1)
+      doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 2)
 
-    assert(numExecutorsToAddForDefaultProfile(manager) === 2)
-    assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 2)
-    doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 4)
-    assert(numExecutorsToAddForDefaultProfile(manager) === 4)
-    assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 4)
-    doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 8)
-    assert(numExecutorsToAddForDefaultProfile(manager) === 8)
-    // reached the limit of 10
-    assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 2)
-    doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
-    assert(numExecutorsToAddForDefaultProfile(manager) === 1)
-    assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 0)
-    doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
-    assert(numExecutorsToAddForDefaultProfile(manager) === 1)
+      assert(numExecutorsToAddForDefaultProfile(manager) === 2)
+      assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 2)
+      doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 4)
+      assert(numExecutorsToAddForDefaultProfile(manager) === 4)
+      assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 4)
+      doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 8)
+      assert(numExecutorsToAddForDefaultProfile(manager) === 8)
+      // reached the limit of 10
+      assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 2)
+      doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
+      assert(numExecutorsToAddForDefaultProfile(manager) === 1)
+      assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 0)
+      doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
+      assert(numExecutorsToAddForDefaultProfile(manager) === 1)
 
-    // Register previously requested executors
-    onExecutorAddedDefaultProfile(manager, "first")
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
-    onExecutorAddedDefaultProfile(manager, "second")
-    onExecutorAddedDefaultProfile(manager, "third")
-    onExecutorAddedDefaultProfile(manager, "fourth")
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
-    onExecutorAddedDefaultProfile(manager, "first") // duplicates should not count
-    onExecutorAddedDefaultProfile(manager, "second")
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
+      // Register previously requested executors
+      onExecutorAddedDefaultProfile(manager, "first")
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
+      onExecutorAddedDefaultProfile(manager, "second")
+      onExecutorAddedDefaultProfile(manager, "third")
+      onExecutorAddedDefaultProfile(manager, "fourth")
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
+      onExecutorAddedDefaultProfile(manager, "first") // duplicates should not count
+      onExecutorAddedDefaultProfile(manager, "second")
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
 
-    // Try adding again
-    // This should still fail because the number pending + running is still at the limit
-    assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 0)
-    doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
-    assert(numExecutorsToAddForDefaultProfile(manager) === 1)
-    assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 0)
-    doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
-    assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
-    assert(numExecutorsToAddForDefaultProfile(manager) === 1)
+      // Try adding again
+      // This should still fail because the number pending + running is still at the limit
+      assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 0)
+      doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
+      assert(numExecutorsToAddForDefaultProfile(manager) === 1)
+      assert(addExecutorsToTargetForDefaultProfile(manager, updatesNeeded) === 0)
+      doUpdateRequest(manager, updatesNeeded.toMap, clock.getTimeMillis())
+      assert(numExecutorsTargetForDefaultProfileId(manager) === 10)
+      assert(numExecutorsToAddForDefaultProfile(manager) === 1)
+    }
   }
 
   test("add executors multiple profiles") {
