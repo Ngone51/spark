@@ -118,7 +118,7 @@ class ExecutorAllocationManagerSuite extends SparkFunSuite {
     assert(addTime(manager) === ExecutorAllocationManager.NOT_SET)
   }
 
-  (0 until 20).foreach { i =>
+  (0 until 100).foreach { i =>
     test(s"add executors default profile $i") {
       val manager = createManager(createConf(1, 10, 1))
       post(SparkListenerStageSubmitted(createStageInfo(0, 1000)))
