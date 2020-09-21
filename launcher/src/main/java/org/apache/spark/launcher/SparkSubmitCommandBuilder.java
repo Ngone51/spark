@@ -404,17 +404,12 @@ class SparkSubmitCommandBuilder extends AbstractCommandBuilder {
   }
 
   private String findExamplesAppJar() {
-    boolean isTesting = "1".equals(getenv("SPARK_TESTING"));
-    if (isTesting) {
-      return SparkLauncher.NO_RESOURCE;
-    } else {
-      for (String exampleJar : findExamplesJars()) {
-        if (new File(exampleJar).getName().startsWith("spark-examples")) {
-          return exampleJar;
-        }
+    for (String exampleJar : findExamplesJars()) {
+      if (new File(exampleJar).getName().startsWith("spark-examples")) {
+        return exampleJar;
       }
-      throw new IllegalStateException("Failed to find examples' main app jar.");
     }
+    throw new IllegalStateException("Failed to find examples' main app jar.");
   }
 
   private List<String> findExamplesJars() {
