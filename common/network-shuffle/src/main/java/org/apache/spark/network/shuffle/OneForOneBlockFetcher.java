@@ -116,7 +116,7 @@ public class OneForOneBlockFetcher {
     int shuffleId = Integer.parseInt(firstBlock[1]);
     boolean batchFetchEnabled = firstBlock.length == 5;
 
-    HashMap<Long, ArrayList<Integer>> mapIdToReduceIds = new HashMap<>();
+    HashMap<Long, ArrayList<String[]>> mapIdToBlockIds = new HashMap<>();
     for (String blockId : blockIds) {
       String[] blockIdParts = splitBlockId(blockId);
       if (Integer.parseInt(blockIdParts[1]) != shuffleId) {
@@ -124,23 +124,36 @@ public class OneForOneBlockFetcher {
           ", got:" + blockId);
       }
       long mapId = Long.parseLong(blockIdParts[2]);
-      if (!mapIdToReduceIds.containsKey(mapId)) {
-        mapIdToReduceIds.put(mapId, new ArrayList<>());
+      if (!mapIdToBlockIds.containsKey(mapId)) {
+        mapIdToBlockIds.put(mapId, new ArrayList<>());
       }
-      mapIdToReduceIds.get(mapId).add(Integer.parseInt(blockIdParts[3]));
-      if (batchFetchEnabled) {
-        // When we read continuous shuffle blocks in batch, we will reuse reduceIds in
-        // FetchShuffleBlocks to store the start and end reduce id for range
-        // [startReduceId, endReduceId).
-        assert(blockIdParts.length == 5);
-        mapIdToReduceIds.get(mapId).add(Integer.parseInt(blockIdParts[4]));
-      }
+      ArrayList<String[]> blocks = mapIdToBlockIds.get(mapId);
+      // override the useless prefix "shuffle" to reuse the blockIdParts
+      blockIdParts[0] = blockId;
+      blocks.add(blockIdParts);
     }
-    long[] mapIds = Longs.toArray(mapIdToReduceIds.keySet());
+    long[] mapIds = Longs.toArray(mapIdToBlockIds.keySet());
     int[][] reduceIdArr = new int[mapIds.length][];
+    int blockIdIndex = 0;
     for (int i = 0; i < mapIds.length; i++) {
-      reduceIdArr[i] = Ints.toArray(mapIdToReduceIds.get(mapIds[i]));
+      ArrayList<String[]> blocks = mapIdToBlockIds.get(mapIds[i]);
+      reduceIdArr[i] = batchFetchEnabled ? new int[2] : new int[blocks.size()];
+      for (int j = 0; j < blocks.size(); j++) {
+        String[] curBlock = blocks.get(j);
+        // ensure the order between `blockIds` and `FetchShuffleBlocks` is consistent
+        this.blockIds[blockIdIndex++] = curBlock[0];
+        reduceIdArr[i][j] = Integer.parseInt(curBlock[3]);
+        if (batchFetchEnabled) {
+          // When we read continuous shuffle blocks in batch, we will reuse reduceIds in
+          // FetchShuffleBlocks to store the start and end reduce id for range
+          // [startReduceId, endReduceId).
+          assert(curBlock.length == 5 && j == 0);
+          reduceIdArr[i][1] = (Integer.parseInt(curBlock[4]));
+        }
+      }
     }
+    assert(blockIdIndex == this.blockIds.length);
+
     return new FetchShuffleBlocks(
       appId, execId, shuffleId, mapIds, reduceIdArr, batchFetchEnabled);
   }
