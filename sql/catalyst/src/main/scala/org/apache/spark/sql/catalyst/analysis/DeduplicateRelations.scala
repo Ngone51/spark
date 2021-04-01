@@ -19,12 +19,11 @@ package org.apache.spark.sql.catalyst.analysis
 
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeMap, AttributeSet, NamedExpression}
-import org.apache.spark.sql.catalyst.plans.logical.{Aggregate, Except, Expand, FlatMapGroupsInPandas, Generate, Intersect, Join, LogicalPlan, Project, SerializeFromObject, Union, Window}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeMap, AttributeSet, NamedExpression, SubqueryExpression}
+import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
 
 object DeduplicateRelations extends Rule[LogicalPlan] {
-
   override def apply(plan: LogicalPlan): LogicalPlan = {
     renewDuplicatedRelations(Nil, plan)._1.resolveOperatorsUp {
       case p: LogicalPlan if !p.childrenResolved => p
@@ -53,38 +52,65 @@ object DeduplicateRelations extends Rule[LogicalPlan] {
           }
         }
         u.copy(children = newChildren)
+      case m @ MergeIntoTable(targetTable, sourceTable, _, _, _) if !m.duplicateResolved =>
+        m.copy(sourceTable = dedupRight(targetTable, sourceTable))
     }
   }
 
+  /**
+   * Deduplicate any duplicated relations of a LogicalPlan
+   * @param existingRelations the known unique relations for a LogicalPlan
+   * @param plan the LogicalPlan that requires the deduplication
+   * @return (the new LogicalPlan which already deduplicate all duplicated relations (if any),
+   *         all relations of the new LogicalPlan )
+   */
   private def renewDuplicatedRelations(
       existingRelations: Seq[MultiInstanceRelation],
       plan: LogicalPlan): (LogicalPlan, Seq[MultiInstanceRelation]) = plan match {
+    case p: LogicalPlan if p.isStreaming => (plan, Nil)
+
     case m: MultiInstanceRelation =>
       if (isDuplicated(existingRelations, m)) {
-        (m.newInstance(), Nil)
+        val newNode = m.newInstance()
+        newNode.copyTagsFrom(m)
+        (newNode, Nil)
       } else {
         (m, Seq(m))
       }
 
-    case _ if plan.children.nonEmpty =>
-      val newChildren = ArrayBuffer.empty[LogicalPlan]
+    case plan: LogicalPlan =>
       val relations = ArrayBuffer.empty[MultiInstanceRelation]
-      for (c <- plan.children) {
-        val (renewed, collected) = renewDuplicatedRelations(existingRelations ++ relations, c)
-        newChildren += renewed
-        relations ++= collected
-      }
+      val newPlan = if (plan.children.nonEmpty) {
+        val newChildren = ArrayBuffer.empty[LogicalPlan]
+        for (c <- plan.children) {
+          val (renewed, collected) = renewDuplicatedRelations(existingRelations ++ relations, c)
+          newChildren += renewed
+          relations ++= collected
+        }
 
-      if (plan.childrenResolved) {
-        val attrMap = AttributeMap(plan.children.flatMap(_.output).zip(
-          newChildren.flatMap(_.output)).filter { case (a1, a2) => a1.exprId != a2.exprId })
-        val newPlan = plan.withNewChildren(newChildren).rewriteAttrs(attrMap)
-        (newPlan, relations)
+        if (plan.childrenResolved) {
+          val attrMap = AttributeMap(
+            plan
+              .children
+              .flatMap(_.output).zip(newChildren.flatMap(_.output))
+              .filter { case (a1, a2) => a1.exprId != a2.exprId }
+          )
+          plan.withNewChildren(newChildren.toSeq).rewriteAttrs(attrMap)
+        } else {
+          plan.withNewChildren(newChildren.toSeq)
+        }
       } else {
-        (plan.withNewChildren(newChildren), relations)
+        plan
       }
 
-    case _ => (plan, Nil)
+      val planWithNewSubquery = newPlan.transformExpressions {
+        case subquery: SubqueryExpression =>
+          val (renewed, collected) = renewDuplicatedRelations(
+            existingRelations ++ relations, subquery.plan)
+          relations ++= collected
+          subquery.withNewPlan(renewed)
+      }
+      (planWithNewSubquery, relations.toSeq)
   }
 
   private def isDuplicated(
@@ -100,7 +126,7 @@ object DeduplicateRelations extends Rule[LogicalPlan] {
    * Generate a new logical plan for the right child with different expression IDs
    * for all conflicting attributes.
    */
-  private def dedupRight (left: LogicalPlan, right: LogicalPlan): LogicalPlan = {
+  private def dedupRight(left: LogicalPlan, right: LogicalPlan): LogicalPlan = {
     val conflictingAttributes = left.outputSet.intersect(right.outputSet)
     logDebug(s"Conflicting attributes ${conflictingAttributes.mkString(",")} " +
       s"between $left and $right")
@@ -114,6 +140,12 @@ object DeduplicateRelations extends Rule[LogicalPlan] {
      */
     def collectConflictPlans(plan: LogicalPlan): Seq[(LogicalPlan, LogicalPlan)] = plan match {
       // Handle base relations that might appear more than once.
+      case oldVersion: MultiInstanceRelation
+          if oldVersion.outputSet.intersect(conflictingAttributes).nonEmpty =>
+        val newVersion = oldVersion.newInstance()
+        newVersion.copyTagsFrom(oldVersion)
+        Seq((oldVersion, newVersion))
+
       case oldVersion: SerializeFromObject
           if oldVersion.outputSet.intersect(conflictingAttributes).nonEmpty =>
         Seq((oldVersion, oldVersion.copy(
@@ -144,6 +176,14 @@ object DeduplicateRelations extends Rule[LogicalPlan] {
 
       case oldVersion @ FlatMapGroupsInPandas(_, _, output, _)
           if oldVersion.outputSet.intersect(conflictingAttributes).nonEmpty =>
+        Seq((oldVersion, oldVersion.copy(output = output.map(_.newInstance()))))
+
+      case oldVersion @ FlatMapCoGroupsInPandas(_, _, _, output, _, _)
+        if oldVersion.outputSet.intersect(conflictingAttributes).nonEmpty =>
+        Seq((oldVersion, oldVersion.copy(output = output.map(_.newInstance()))))
+
+      case oldVersion @ MapInPandas(_, output, _)
+        if oldVersion.outputSet.intersect(conflictingAttributes).nonEmpty =>
         Seq((oldVersion, oldVersion.copy(output = output.map(_.newInstance()))))
 
       case oldVersion: Generate
