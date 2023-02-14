@@ -311,18 +311,6 @@ final class ShuffleBlockFetcherIterator(
         ShuffleBlockFetcherIterator.this.synchronized {
           val blockInfo = req.blockIdToBlockMap(BlockId(blockId))
           if (!isZombie) {
-<<<<<<< Updated upstream
-            // Increment the ref count because we need to pass this to a different thread.
-            // This needs to be released after use.
-            buf.retain()
-            remainingBlocks -= blockId
-            blockOOMRetryCounts.remove(blockId)
-            updateMergedReqsDuration(BlockId(blockId).isShuffleChunk)
-            results.put(SuccessFetchResult(BlockId(blockId), infoMap(blockId)._2,
-              address, infoMap(blockId)._1, buf, remainingBlocks.isEmpty))
-            logDebug("remainingBlocks: " + remainingBlocks)
-            enqueueDeferredFetchRequestIfNecessary()
-=======
             if (blockInfo.state == BlockFetchState.DISCARD) {
               logInfo(s"Block $blockId is fetched successfully but was discarded already")
             } else {
@@ -333,12 +321,11 @@ final class ShuffleBlockFetcherIterator(
               remainingBlocks -= blockId
               blockOOMRetryCounts.remove(blockId)
               updateMergedReqsDuration(BlockId(blockId).isShuffleChunk)
-              results.put(new SuccessFetchResult(BlockId(blockId), infoMap(blockId)._2,
+              results.put(SuccessFetchResult(BlockId(blockId), infoMap(blockId)._2,
                 address, infoMap(blockId)._1, buf, remainingBlocks.isEmpty))
               logDebug("remainingBlocks: " + remainingBlocks)
               enqueueDeferredFetchRequestIfNecessary()
             }
->>>>>>> Stashed changes
           }
         }
         logTrace(s"Got remote block $blockId after ${Utils.getUsedTimeNs(startTimeNs)}")
