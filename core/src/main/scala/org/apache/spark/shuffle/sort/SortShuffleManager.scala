@@ -130,6 +130,8 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     val baseShuffleHandle = handle.asInstanceOf[BaseShuffleHandle[K, _, C]]
+    val shuffleDataRegion =
+      ShuffleDataRegion(handle.shuffleId, startMapIndex, endMapIndex, startPartition, endPartition)
     val (blocksByAddress, canEnableBatchFetch) =
       if (baseShuffleHandle.dependency.isShuffleMergeFinalizedMarked) {
         val res = SparkEnv.get.mapOutputTracker.getPushBasedShuffleMapSizesByExecutorId(
@@ -142,6 +144,7 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
       }
     new BlockStoreShuffleReader(
       handle.asInstanceOf[BaseShuffleHandle[K, _, C]], blocksByAddress, context, metrics,
+      shuffleDataRegion,
       shouldBatchFetch =
         canEnableBatchFetch && canUseBatchFetch(startPartition, endPartition, context))
   }
@@ -196,6 +199,12 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
   }
 }
 
+case class ShuffleDataRegion(
+    shuffleId: Int,
+    startMapIndex: Int,
+    endMapIndex: Int,
+    startPartition: Int,
+    endPartition: Int)
 
 private[spark] object SortShuffleManager extends Logging {
 

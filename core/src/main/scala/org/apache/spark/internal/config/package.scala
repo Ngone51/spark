@@ -527,6 +527,13 @@ package object config {
       .bytesConf(ByteUnit.BYTE)
       .createOptional
 
+  private[spark] val STORAGE_DECOMMISSION_SHUFFLE_REFRESH =
+    ConfigBuilder("spark.storage.decommission.shuffleBlocks.refreshLocationsEnabled")
+      .doc("")
+      .version("3.4.0")
+      .booleanConf
+      .createWithDefault(true)
+
   private[spark] val STORAGE_REPLICATION_TOPOLOGY_FILE =
     ConfigBuilder("spark.storage.replication.topologyFile")
       .version("2.1.0")
