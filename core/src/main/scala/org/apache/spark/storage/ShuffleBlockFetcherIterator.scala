@@ -1155,26 +1155,96 @@ final class ShuffleBlockFetcherIterator(
           // Set result to null to force another iteration.
           result = null
 
-        case RefreshFetchRequests(blocksWithFreshLocations, numBlocksDiscard) =>
-          numBlocksToFetch -= numBlocksDiscard
-          val localBlocks = mutable.LinkedHashSet[(BlockId, Int)]()
-          val hostLocalBlocksByExecutor =
-            mutable.LinkedHashMap[BlockManagerId, collection.Seq[(BlockId, Long, Int)]]()
-          val remoteRequests = partitionBlocksByFetchMode(
-            blocksWithFreshLocations,
-            localBlocks,
-            hostLocalBlocksByExecutor,
-            // Push-based Shuffle is not supported yet so we don't care about its result
-            pushMergedLocalBlocks = mutable.LinkedHashSet[BlockId]()
-          )
+        case RefreshFetchRequests(failedBlock, badLoc, e) =>
+          var doRefresh = true
+          ShuffleBlockFetcherIterator.this.synchronized {
+            if (failedBlock.state == BlockFetchState.DISCARD) {
+              doRefresh = false
+            }
+          }
 
-          fetchRequests ++= Utils.randomize(remoteRequests)
+          if (doRefresh) {
+            // Fetch latest map statuses for the desired shuffle data region from driver
+            val mapOutputTracker = SparkEnv.get.mapOutputTracker
+            // Clean up the cached map statues so that we can fetch the latest from the driver
+            mapOutputTracker.unregisterShuffle(shuffleDataRegion.shuffleId)
+            val blocksWithFreshLocations =
+              mapOutputTracker.getMapSizesByExecutorId(
+                shuffleDataRegion.shuffleId,
+                shuffleDataRegion.startMapIndex,
+                shuffleDataRegion.endMapIndex,
+                shuffleDataRegion.startPartition,
+                shuffleDataRegion.endPartition)
+                .flatMap {
+                  case (bmId, blocks) => blocks.map(block => (block._1, bmId))
+                }.toMap
 
-          // Get Local Blocks
-          fetchLocalBlocks(localBlocks)
-          // Get host local blocks if any
-          fetchAllHostLocalBlocks(hostLocalBlocksByExecutor)
+            val badInFlightRequests = reqsInFlight.filter(_.address == badLoc)
+            val badPendingFetchRequests = fetchRequests.dequeueAll(_.address == badLoc)
+            val badDeferredRequests = deferredFetchRequests.remove(badLoc)
+              .getOrElse(Seq.empty[FetchRequest])
 
+            val badInFlightBlocks =
+              ShuffleBlockFetcherIterator.this.synchronized {
+                val blocks =
+                  badInFlightRequests.flatMap(_.blocks.filter(_.state == BlockFetchState.FETCHING))
+                // Mark all bad in-flight blocks as DISCARD and we'll replace them with
+                // new block fetches
+                blocks.foreach(_.state = BlockFetchState.DISCARD)
+                blocks
+              }
+
+            val blocksWithBadLocations = badInFlightBlocks ++
+              (badPendingFetchRequests ++ badDeferredRequests).flatMap(_.blocks)
+
+            val (blocksToRefresh, blocksToFail) = blocksWithBadLocations.partition { block =>
+              val newLocOpt = blocksWithFreshLocations.get(block.blockId)
+              // Map statuses may haven't been cleaned up due to the race condition. We should
+              // only consider the block is successfully migrated when the new location is defined
+              // and not the same with the bad location. It's fine if the executor is not really
+              // decommissioned and all the blocks with old locations are considered to fetch fail
+              // since the `failedBlock` would throw FetchFailure anyway without this improvement.
+              newLocOpt.isDefined && newLocOpt.get != badLoc
+            }
+
+            if (blocksToFail.nonEmpty) { // Bad blocks without available locations
+              val (badBlock, exception) = {
+                if (blocksToFail.exists(_.blockId == failedBlock.blockId)) {
+                  (failedBlock, e)
+                } else {
+                  (blocksToFail.head, new RuntimeException(
+                    s"Block ${blocksToFail.head} map status is unavailable"))
+                }
+              }
+              throwFetchFailedException(badBlock.blockId, badBlock.mapIndex, badLoc, exception)
+            } else {
+              // Refresh blocks with new locations
+              val splitsByAddress = new HashMap[BlockManagerId, ListBuffer[(BlockId, Long, Int)]]
+              blocksToRefresh.foreach { block =>
+                val newLoc = blocksWithFreshLocations(block.blockId)
+                splitsByAddress.getOrElseUpdate(newLoc, ListBuffer()) +=
+                  ((block, size, block.mapIndex))
+              }
+              val localBlocks = mutable.LinkedHashSet[(BlockId, Int)]()
+              val hostLocalBlocksByExecutor =
+                mutable.LinkedHashMap[BlockManagerId, collection.Seq[(BlockId, Long, Int)]]()
+              val remoteRequests = partitionBlocksByFetchMode(
+                splitsByAddress.iterator,
+                localBlocks,
+                hostLocalBlocksByExecutor,
+                // Push-based Shuffle is not supported yet so we don't care about its result
+                pushMergedLocalBlocks = mutable.LinkedHashSet[BlockId]()
+              )
+
+              numBlocksToFetch -= blocksWithBadLocations.size
+              fetchRequests ++= Utils.randomize(remoteRequests)
+
+              // Get Local Blocks
+              fetchLocalBlocks(localBlocks)
+              // Get host local blocks if any
+              fetchAllHostLocalBlocks(hostLocalBlocksByExecutor)
+            }
+          }
           result = null
       }
 
@@ -1709,10 +1779,10 @@ object ShuffleBlockFetcherIterator {
   private[storage]
   case class DeferFetchRequestResult(fetchRequest: FetchRequest) extends FetchResult
 
-  private[storage]
-  case class RefreshFetchRequests(
-      blocksWithFreshLocations: Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])],
-      numBlocksDiscard: Int) extends FetchResult
+  private[storage] case class RefreshFetchRequests(
+      failedBlock: FetchBlockInfo,
+      badLoc: BlockManagerId,
+      e: Throwable) extends FetchResult
 
   /**
    * Result of an un-successful fetch of either of these:
